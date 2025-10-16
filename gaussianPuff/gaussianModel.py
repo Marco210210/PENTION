@@ -65,6 +65,7 @@ def run_dispersion_model(config: ModelConfig, bounds: Optional[Tuple] = None):
     z = np.arange(0, z_max + dz, dz)
 
     times = np.arange(1, config.days * 24 + 1) / 24.0
+    rng = np.random.default_rng(config.seed)
 
     # Stability setup
     if config.stability_profile == StabilityType.CONSTANT:
@@ -90,13 +91,17 @@ def run_dispersion_model(config: ModelConfig, bounds: Optional[Tuple] = None):
     if config.wind_type == WindType.CONSTANT: #stable directions
         wind_dir = np.zeros_like(times)
         wind_label = "Constant wind"
-    elif config.wind_type == WindType.FLUCTUATING: # variable directions
-        wind_dir = 360. * np.random.rand(len(times))
+    elif config.wind_type == WindType.FLUCTUATING:
+        wind_dir = rng.uniform(0.0, 360.0, size=len(times))
         wind_label = "Fluctuating wind"
-    elif config.wind_type == WindType.PREVAILING: #
-        wind_dir = -np.sqrt(2.) * erfcinv(2. * np.random.rand(len(times))) * 40.
+
+    elif config.wind_type == WindType.PREVAILING:
+        # genera direzioni con distribuzione intorno a una prevalente
+        u = rng.uniform(0.0, 1.0, size=len(times))
+        wind_dir = -np.sqrt(2.0) * erfcinv(2.0 * u) * 40.0  # come prima
         wind_dir = np.mod(wind_dir, 360)
         wind_label = "Prevailing wind"
+
     else:
         raise ValueError("Unsupported wind type")
         

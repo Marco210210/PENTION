@@ -1,4 +1,4 @@
-#config.py
+# config.py
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from typing import List, Tuple, Optional
@@ -7,10 +7,10 @@ class DispersionModelType(Enum):
     PLUME = "plume"
     PUFF = "puff"
 
-class ConfigPuff():
-    def __init__(self, puff_interval: float = 1, max_puff_age: float = 6):
-        self.puff_interval = puff_interval
-        self.max_puff_age = max_puff_age
+@dataclass
+class ConfigPuff:
+    puff_interval: float = 1    # ore tra un puff e l'altro
+    max_puff_age: float = 6     # ore di "vita" di un puff
 
 class OutputType(Enum):
     PLAN_VIEW = 1
@@ -18,17 +18,19 @@ class OutputType(Enum):
     SURFACE_TIME = 3
     NO_PLOT = 4
 
+    @staticmethod
     def from_string(output_type: str):
         try:
             return OutputType[output_type]
         except KeyError:
-            raise ValueError(f"No OutpuType member matches '{output_type}'")
+            raise ValueError(f"No OutputType member matches '{output_type}'")
 
 class WindType(Enum):
     CONSTANT = 1
     FLUCTUATING = 2
     PREVAILING = 3
 
+    @staticmethod
     def from_string(wind_type: str):
         try:
             return WindType[wind_type]
@@ -43,6 +45,7 @@ class PasquillGiffordStability(Enum):
     MODERATELY_STABLE= 5
     VERY_STABLE = 6
 
+    @staticmethod
     def from_string(psg_stab: str):
         try:
             return PasquillGiffordStability[psg_stab]
@@ -53,6 +56,7 @@ class StabilityType(Enum):
     CONSTANT = 1
     ANNUAL = 2
 
+    @staticmethod
     def from_string(stab_type: str):
         try:
             return StabilityType[stab_type]
@@ -76,7 +80,7 @@ class NPS(Enum):
         except KeyError:
             raise ValueError(f"No NPS member matches '{nps_string}'")
 
-# Definizione delle proprietà fisiche per ciascun tipo di NPS
+# Proprietà fisiche NPS
 nps_properties = {
     NPS.CANNABINOID_ANALOGUES: {"nu": 1, "rho_s": 1.2e3, "Ms": 314.46},
     NPS.CATHINONE_ANALOGUES: {"nu": 1, "rho_s": 1.3e3, "Ms": 149.23},
@@ -89,6 +93,7 @@ nps_properties = {
 
 @dataclass
 class ModelConfig:
+    # Meteo & fisica
     days: int
     RH: float
     aerosol_type: NPS
@@ -97,28 +102,33 @@ class ModelConfig:
     stability_value: PasquillGiffordStability
     wind_type: WindType
     wind_speed: float
+
+    # Griglia / output
     output: OutputType
-    stacks: List[Tuple[float, float, float, float]]  # List of (x, y, Q, H)
+    stacks: List[Tuple[float, float, float, float]]  # (x, y, Q, H)
     dry_size: float = 60e-9
     x_slice: int = 26
     y_slice: int = 1
-    grid_size: int= 500
+    grid_size: int = 100  # prima era 500, più leggero per dev
+
+    # Modello di dispersione
     dispersion_model: DispersionModelType = DispersionModelType.PLUME
-    config_puff: 'Optional[ConfigPuff]' = field(default_factory=ConfigPuff) if dispersion_model == DispersionModelType.PUFF else None
+    config_puff: Optional[ConfigPuff] = None
+
+    # Randomness
+    seed: Optional[int] = 42
+
+    def __post_init__(self):
+        # Default per PUFF
+        if self.dispersion_model == DispersionModelType.PUFF and self.config_puff is None:
+            self.config_puff = ConfigPuff()
 
     def to_dict(self):
         d = asdict(self)
-
         d["aerosol_type"] = self.aerosol_type.name if self.aerosol_type else None
         d["stability_profile"] = self.stability_profile.name if self.stability_profile else None
         d["stability_value"] = self.stability_value.name if self.stability_value else None
         d["wind_type"] = self.wind_type.name if self.wind_type else None
         d["output"] = self.output.name if self.output else None
         d["dispersion_model"] = self.dispersion_model.name if self.dispersion_model else None
-
-        if self.config_puff:
-            d["config_puff"] = (
-                self.config_puff.to_dict() if hasattr(self.config_puff, "to_dict") else asdict(self.config_puff)
-            )
-
         return d
