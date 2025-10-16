@@ -5,7 +5,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.25-orange)
 ![Docker](https://img.shields.io/badge/Docker-Enabled-blueviolet)
 
-**Progetto di Tesi – Università degli Studi del Sannio, Corso di Ingegneria Informatica**
+**Progetto di Tesi – Università degli Studi di Salerno, Corso di Informatica**
 
 Pention-System è una piattaforma avanzata per la simulazione, l’analisi e la localizzazione di sorgenti di emissione tramite dati di sensori distribuiti. Il progetto integra modelli di machine learning e fisica computazionale per stimare la dispersione di sostanze nell’aria, rendendolo un potente strumento per studi ambientali e di sicurezza industriale.
 
@@ -75,21 +75,3 @@ streamlit run application.py
 - Mappe di concentrazione dinamiche e interattive
 - Predizione accurata della posizione della sorgente di emissione
 - Classificazione dei dati NPS dai sensori
-
-<img width="1920" height="1080" alt="pention_system_interfaccia" src="https://github.com/user-attachments/assets/86f1cad0-4f3b-45e7-b846-ba86c3e7ce27" />
-
----
-
-## 📄 License
-
-Questo progetto è rilasciato sotto **MIT License** – vedi il file [LICENSE](LICENSE) per i dettagli.
-
----
-
-## 💡 Contatti
-
-**Email:** [mininnoclaudio@gmail.com](mailto:mininnoclaudio@gmail.com)
-
----
-
-*Questo progetto è stato sviluppato come parte della tesi triennale in Ingegneria Informatica presso l’Università degli Studi del Sannio.*
