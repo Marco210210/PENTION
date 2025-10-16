@@ -3,8 +3,7 @@ import matplotlib.pyplot as plt
 import random
 from scipy.interpolate import RegularGridInterpolator
 import os
-import re
-from gaussianPuff.config import WindType, StabilityType, PasquillGiffordStability
+from GaussianPuff.Config import WindType, StabilityType, PasquillGiffordStability
 import pandas as pd
 from pathlib import Path
 
@@ -72,6 +71,10 @@ class SensorSubstance:
             self.noisy_concentrations = self.concentrations.copy()
 
     def sample_substance_synthetic(self, x_grid, y_grid, t_grid):
+        x_grid = self._validate_1d_strictly_increasing(x_grid, "x_grid")
+        y_grid = self._validate_1d_strictly_increasing(y_grid, "y_grid")
+        t_grid = self._validate_1d_strictly_increasing(t_grid, "t_grid")
+
         """
         Genera serie temporali sintetiche di concentrazione e spettro di massa
         senza conoscere la sorgente reale.
@@ -94,20 +97,25 @@ class SensorSubstance:
         src_intensity = np.random.uniform(0.1, 1.0)
 
         # 2. Genera campo di concentrazione sintetico (gaussiano centrato sulla sorgente)
-        conc_field = np.zeros((len(x_grid), len(y_grid), len(t_grid)))
-        for i, x in enumerate(x_grid):
-            for j, y in enumerate(y_grid):
-                r2 = (x - src_x)**2 + (y - src_y)**2
-                for k, t in enumerate(t_grid):
-                    # decadimento con distanza e tempo
-                    conc_field[i, j, k] = src_intensity * np.exp(-r2 / (2*0.01)) * np.exp(-0.1*t)
+        X, Y = np.meshgrid(x_grid, y_grid, indexing="xy")            # (ny, nx)
+        R2 = (X - src_x)**2 + (Y - src_y)**2                         # (ny, nx)
+        space = np.exp(-R2 / (2 * 0.01))                             # sigma^2=0.01 (mock)
+        time = np.exp(-0.1 * t_grid)[None, None, :]                  # (1,1,nt)
+        conc_field = src_intensity * space[:, :, None] * time        # (ny, nx, nt)
+
+        # se vuoi shape (nx, ny, nt) come standard del tuo motore:
+        conc_field = np.transpose(conc_field, (1, 0, 2))             # (nx, ny, nt)
 
         # 3. Interpolazione per ottenere la serie temporale al sensore
-        from scipy.interpolate import RegularGridInterpolator
-        interpolator = RegularGridInterpolator((x_grid, y_grid, t_grid), conc_field, 
-                                            bounds_error=False, fill_value=0.0)
-        coords = [(self.x, self.y, t) for t in t_grid]
-        self.concentrations = np.array([interpolator(c) for c in coords])
+        interpolator = RegularGridInterpolator((x_grid, y_grid, t_grid), conc_field,
+                                       bounds_error=False, fill_value=0.0)
+        coords = np.column_stack([
+            np.full_like(t_grid, self.x, dtype=float),
+            np.full_like(t_grid, self.y, dtype=float),
+            t_grid
+        ])
+        self.concentrations = interpolator(coords)
+
         self.times = t_grid
 
         # 4. Aggiungi rumore
@@ -144,24 +152,22 @@ class SensorSubstance:
 
 
     def _mz_columns(self, df: pd.DataFrame) -> list[str]:
-        """
-        Ritorna esattamente le 600 colonne m/z numeriche (nomi '1'..'600').
-        Esclude colonne testuali come 'Name' e 'label'.
-        """
-        cols = [c for c in df.columns if str(c).isdigit()]
-        cols_sorted = sorted(cols, key=lambda c: int(c))
+        # ammetti '1'..'600' o 'm1'..'m600'
+        def to_mz_index(c):
+            s = str(c).lower().strip()
+            if s.startswith("m") and s[1:].isdigit():
+                return int(s[1:])
+            if s.isdigit():
+                return int(s)
+            return None
 
-        # Caso ideale: abbiamo proprio 1..600
-        expected = {str(i) for i in range(1, 601)}
-        if expected.issubset(set(cols_sorted)):
-            return [str(i) for i in range(1, 601)]
+        pairs = [(c, to_mz_index(c)) for c in df.columns]
+        numeric = [(c, i) for c, i in pairs if i is not None and 1 <= i <= 600]
+        if len(numeric) < 600:
+            raise ValueError(f"Impossibile identificare 600 colonne m/z (trovate {len(numeric)}).")
 
-        # Altrimenti, prendi le prime 600 colonne a nome numerico
-        if len(cols_sorted) >= 600:
-            return cols_sorted[:600]
-
-        raise ValueError(f"Impossibile identificare 600 colonne m/z numeriche (trovate {len(cols_sorted)}).")
-
+        numeric.sort(key=lambda x: x[1])
+        return [c for c, _ in numeric[:600]]
 
     def _generate_mass_spectra(self, df: pd.DataFrame | None = None,
                             n_generic: int = 9, noise_level: float = 0.01,
@@ -304,8 +310,8 @@ class SensorSubstance:
             "mass_spectra": mass_spectra,
             "meteo": {
                 "wind_speed": float(wind_speed),
-                "wind_type": wind_type,
-                "stability_value": stability_value,
+                "wind_type": getattr(wind_type, "name", str(wind_type)),
+                "stability_value": getattr(stability_value, "name", str(stability_value)),
                 "RH": float(RH),
             },
         }

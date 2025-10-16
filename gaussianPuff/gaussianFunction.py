@@ -1,76 +1,83 @@
-#gaussianFunction.py
 import numpy as np
-from scipy.special import erfcinv as erfcinv
-from gaussianPuff.sigmaCalculation import calc_sigmas 
-from numpy import sqrt
+from GaussianPuff.SigmaCalculation import calc_sigmas
 
-def gauss_func_plume(Q,u,dir1,x,y,z,xs,ys,H,STABILITY):
-    """
-    Calculate the Gaussian plume concentration at a point (x,y,z) from a stack
-    located at (xs,ys) with height H, emitting a pollutant at rate Q
-    with wind speed u and direction dir1.
-    Param:
-        Q: emission rate (kg/s)
-        u: wind speed (m/s)
-        dir1: wind direction (degrees, 0 is north)
-        x, y, z: coordinates of the point where concentration is calculated (m)
-        xs, ys: coordinates of the stack (m)
-        H: height of the stack (m)
-        STABILITY: stability class (ePasquill-Gifford stability class)
-    Returns: 
-        concentration at (x,y,z) (kg/m^3)
-    """
-    u1=u
-    x1=x-xs # shift the coordinates so that stack is centre point
-    y1=y-ys
+def gauss_func_plume(Q, u, dir1, x, y, z, xs, ys, H, STABILITY):
+    # Se u ~ 0: niente trasporto -> concentrazione ~ 0
+    if u is None or u <= 1e-12:
+        # costruisci C con shape coerente
+        X, Y = (np.meshgrid(x, y, indexing='xy') if x.ndim == 1 and y.ndim == 1
+                else (x, y))
+        return np.zeros_like(X, dtype=float)
 
-    # components of u (wind) in x and y directions
-    # -180 degrees the wind direct is wheret the wind is coming from
-    # so we need to subtract 180 degrees to get the direction of the wind
-    wx=u1*np.sin((dir1-180.)*np.pi/180.)
-    wy=u1*np.cos((dir1-180.)*np.pi/180.)
+    # Assicuriamoci di lavorare con array
+    x = np.asarray(x)
+    y = np.asarray(y)
+    z = np.asarray(z)
 
-    dot_product=wx*x1+wy*y1    # Angle between point x, y and the wind direction, so use scalar product:
-    magnitudes=u1*np.sqrt(x1**2.+y1**2.)  # Magnitudes of the vectors
-    subtended=np.arccos(dot_product/(magnitudes+1e-15)) # Avoid division by zero
+    # Se arrivano 1D, creiamo la griglia 2D
+    if x.ndim == 1 and y.ndim == 1:
+        X, Y = np.meshgrid(x, y, indexing='xy')  # shape (ny, nx)
+        Z = np.broadcast_to(z, X.shape) if np.ndim(z) == 0 else np.asarray(z)
+        if Z.shape != X.shape:
+            Z = np.full_like(X, float(z))  # z scalare
+    else:
+        X, Y = x, y
+        Z = z if np.shape(z) == np.shape(X) else np.full_like(X, float(z))
 
-    # distance to point x,y from stack
-    hypotenuse=np.sqrt(x1**2.+y1**2.)
+    u1 = float(u)
+    # componenti del vento (gradi meteo: da dove viene -> ruota di 180°)
+    ang = np.deg2rad(dir1 - 180.0)
+    wx = u1 * np.sin(ang)
+    wy = u1 * np.cos(ang)
 
-    # distance along the wind direction to perpendilcular line that intesects
-    downwind=np.cos(subtended)*hypotenuse #x
-    crosswind=np.sin(subtended)*hypotenuse #y
+    # coordinate relative alla sorgente
+    X1 = X - xs
+    Y1 = Y - ys
 
-    ind=np.where(downwind>0.)
-    C=np.zeros((len(x),len(y)))
+    # prodotto scalare e norme per l'angolo
+    dot_product = wx * X1 + wy * Y1
+    r = np.sqrt(X1**2 + Y1**2)
+    denom = (u1 * r) + 1e-15
 
-    # calculate sigmas based on stability and distance downwind
-    (sig_y,sig_z)=calc_sigmas(STABILITY,downwind)
+    # arccos con clip per evitare NaN
+    cos_theta = np.clip(dot_product / denom, -1.0, 1.0)
+    subtended = np.arccos(cos_theta)
 
-    #sigma_y, sigma_z determnate the spread of the plume in the crosswind and vertical directions
-    #sigma_y is the horizontal spread, sigma_z is the vertical spread
-    #the concentration is highest at the stack and decreases with distance from the stack
+    hypotenuse = r
+    downwind = np.cos(subtended) * hypotenuse
+    crosswind = np.sin(subtended) * hypotenuse
 
-    C[ind]=Q/(2.*np.pi*u1*sig_y[ind]*sig_z[ind]) \
-        * np.exp(-crosswind[ind]**2./(2.*sig_y[ind]**2.))  \
-        *(np.exp(-(z[ind]-H)**2./(2.*sig_z[ind]**2.)) + \
-        np.exp(-(z[ind]+H)**2./(2.*sig_z[ind]**2.)) )
+    C = np.zeros_like(X, dtype=float)
+    ind = downwind > 0.0
+
+    sig_y, sig_z = calc_sigmas(STABILITY, downwind)
+
+    C[ind] = (Q / (2.0 * np.pi * u1 * sig_y[ind] * sig_z[ind])
+              * np.exp(-crosswind[ind]**2 / (2.0 * sig_y[ind]**2))
+              * (np.exp(-(Z[ind] - H)**2 / (2.0 * sig_z[ind]**2))
+                 + np.exp(-(Z[ind] + H)**2 / (2.0 * sig_z[ind]**2))))
     return C
 
 def gauss_func_puff(puff, x_grid, y_grid, z_grid, dt, stability, wind_speed, wind_dir):
+    # Nota: qui wind_dir non viene usata. Il centro del puff (puff.x, puff.y, puff.z)
+    # è già aggiornato dallo step di advezione esterno.
 
-    # Calcola sigmas in base al tempo passato
-    downwind_dist = wind_speed * dt
+    downwind_dist = max(0.0, float(wind_speed) * float(dt))
     sig_y, sig_z = calc_sigmas(stability, np.array([downwind_dist]))
+    sig_y = float(sig_y[0])
+    sig_z = float(sig_z[0])
 
-    # Coord. relative al puff
-    x1 = x_grid - puff.x
-    y1 = y_grid - puff.y
-    z1 = z_grid - puff.z
+    # coordinate relative
+    x1 = np.asarray(x_grid) - float(puff.x)
+    y1 = np.asarray(y_grid) - float(puff.y)
+    z1 = np.asarray(z_grid) - float(puff.z)
 
-    factor = puff.q / (2 * np.pi * sig_y * sig_z)
-    C = factor * np.exp(-x1**2 / (2 * sig_y**2)) \
-             * np.exp(-y1**2 / (2 * sig_y**2)) \
-             * (np.exp(-(z1)**2 / (2 * sig_z**2)) + np.exp(-(z1 + 2*puff.z)**2 / (2 * sig_z**2)))
-    
+    # coefficiente (puff.q = massa/“quantità” del puff)
+    factor = float(puff.q) / (2.0 * np.pi * sig_y * sig_z)
+
+    C = (factor
+         * np.exp(-x1**2 / (2.0 * sig_y**2))
+         * np.exp(-y1**2 / (2.0 * sig_y**2))
+         * (np.exp(-(z1)**2 / (2.0 * sig_z**2))
+            + np.exp(-(z1 + 2.0 * float(puff.z))**2 / (2.0 * sig_z**2))))
     return C

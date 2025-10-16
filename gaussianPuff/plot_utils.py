@@ -4,9 +4,6 @@ import matplotlib.pyplot as plt
 import folium
 from folium.plugins import HeatMap
 import matplotlib.animation as animation
-from mpl_toolkits.mplot3d import Axes3D
-from scipy import integrate
-import scipy
 from matplotlib.patches import Circle
 from windrose import WindroseAxes
 
@@ -19,7 +16,8 @@ def plot_plan_view(C1, x, y, title, wind_dir=None, wind_speed=None, puff_list=No
     vmax = np.percentile(data, 95)
 
     # Plot della concentrazione integrata
-    pcm = ax_main.pcolor(x, y, data, cmap='jet', shading='auto', vmin=vmin, vmax=vmax)
+    X, Y = np.meshgrid(x, y, indexing='xy')    # (ny, nx)
+    pcm = ax_main.pcolormesh(X, Y, data.T, cmap='jet', shading='auto', vmin=vmin, vmax=vmax)
     fig.colorbar(pcm, ax=ax_main, label=r'$\mu g \cdot m^{-3}$')
     ax_main.set_xlabel('x (m)')
     ax_main.set_ylabel('y (m)')
@@ -70,10 +68,10 @@ def plot_surface_time(C1, times, x_idx, y_idx, stability, stab_label, wind_label
         return y_smooth
 
     fig, (ax1, ax2) = plt.subplots(2, sharex=True, figsize=(10, 6))
-    signal = 1e6 * np.squeeze(C1[y_idx, x_idx, :])
+    signal = 1e6 * np.asarray(C1[x_idx, y_idx, :]).squeeze()
     ax1.plot(times, signal, label="Hourly mean")
     ax1.plot(times, smooth(signal, 24), 'r', label="Daily mean")
-    ax1.set_ylabel('Mass loading ($m$ g m$^{-3}$)')
+    ax1.set_ylabel('Concentrazione (μg/m³)')
     ax1.set_title(stab_label + '\n' + wind_label)
     ax1.legend()
 
@@ -84,17 +82,22 @@ def plot_surface_time(C1, times, x_idx, y_idx, stability, stab_label, wind_label
     plt.tight_layout()
     plt.show()
 
-def plot_height_slice(C1, y, z, stab_label, wind_label):
-    plt.figure(figsize=(8, 6))
-    data = np.mean(C1, axis=2) * 1e6
-    plt.pcolor(y,z, data, cmap='jet')      
-    plt.clim(0,1e2)
-    plt.xlabel('y (metres)')
-    plt.ylabel('z (metres)')
-    plt.title(stab_label + '\n' + wind_label)
-    cb1=plt.colorbar()
-    cb1.set_label(r'$\mu$ g m$^{-3}$')
+def plot_height_slice(C1, x, y, z, x_idx, stab_label="", wind_label=""):
+    """
+    Sezione verticale nel piano (y-z) al fissato x_idx.
+    C1: (nx, ny, nt); x,y 1D; z può essere scalare (suolo) o array (se 4D).
+    """
+    data = np.mean(C1[x_idx, :, :], axis=1) * 1e6   # (ny,)
+    # se vuoi mostrare come "colonna" vs y, fai una semplice linea:
+    plt.figure(figsize=(7,4))
+    plt.plot(y, data)
+    plt.xlabel('y (m)')
+    plt.ylabel(r'Concentrazione [$\mu g \cdot m^{-3}$]')
+    plt.title((stab_label + '\n' + wind_label).strip())
+    plt.grid(True)
+    plt.tight_layout()
     plt.show()
+
 
 def plot_surface_view_3d(C, x, y, z=None, times=None, 
                                    source=None, sensors=None, 
@@ -133,7 +136,7 @@ def plot_surface_view_3d(C, x, y, z=None, times=None,
     data = data * 1e6
 
     # Meshgrid
-    X, Y = np.meshgrid(x, y)
+    X, Y = np.meshgrid(x, y, indexing='xy')
     Z = data.T  # attenzione: trasposto per combaciare con meshgrid
 
     # Colormap contrastata
@@ -146,10 +149,11 @@ def plot_surface_view_3d(C, x, y, z=None, times=None,
     surf = ax.plot_surface(X, Y, Z, cmap='jet', vmin=vmin, vmax=vmax, linewidth=0, antialiased=True)
 
     # Overlay mappa edifici
-    H, W = binary_map.shape
-    y_map, x_map = np.meshgrid(np.arange(W), np.arange(H))
-    buildings = np.where(binary_map == 0)
-    ax.bar3d(buildings[1], buildings[0], 0, 1, 1, np.max(Z)*0.1, color='gray', alpha=0.5, shade=True, label="Edifici")
+    if binary_map is not None:
+        H, W = binary_map.shape
+        buildings = np.where(binary_map == 0)
+        ax.bar3d(buildings[1], buildings[0], 0, 1, 1, np.max(Z)*0.1,
+                color='gray', alpha=0.5, shade=True, label="Edifici")
 
     # Overlay sorgente
     if source is not None:
@@ -174,82 +178,70 @@ def plot_surface_view_3d(C, x, y, z=None, times=None,
 
 def animate_plan_view(C1, x, y, binary_map=None, sensor_locs=None, interval=200, save_path=None):
     """
-    Anima la dispersione temporale su mappa planare.
-    
-    Parametri:
-    - C1: array (Y, X, T)
-    - x, y: meshgrid (2D) delle coordinate in metri
-    - binary_map: (Y, X) - 1 = suolo libero, 0 = edificio
-    - sensor_locs: lista di tuple (x, y) in metri
-    - interval: tempo tra i frame in ms
-    - save_path: se fornito, salva la gif (es. 'dispersion.gif')
+    C1: (nx, ny, nt); x,y: 1D axes (m)
     """
-    assert C1.ndim == 3, "C1 deve avere shape (Y, X, T)"
-    Y, X, T = C1.shape
+    assert C1.ndim == 3, "C1 deve avere shape (nx, ny, nt)"
+    T = C1.shape
 
-    # Conversione a microgrammi/m^3
     C1_micro = C1 * 1e6
-
     vmin = np.percentile(C1_micro, 5)
     vmax = np.percentile(C1_micro, 95)
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    cmap = plt.get_cmap('jet')
-
-    # Primo frame
-    img = ax.pcolormesh(x, y, C1_micro[:, :, 0], cmap=cmap, shading='auto', vmin=vmin, vmax=vmax)
+    extent = (x.min(), x.max(), y.min(), y.max())
+    img = ax.imshow(C1_micro[:, :, 0].T, origin='lower', extent=extent,
+                    cmap='jet', vmin=vmin, vmax=vmax, aspect='equal')
     cb = fig.colorbar(img, ax=ax)
     cb.set_label(r'$\mu g \cdot m^{-3}$')
 
-    # Overlay edifici
+    # overlay edifici
     if binary_map is not None:
-        buildings_overlay = ax.imshow((binary_map == 0), extent=(x.min(), x.max(), y.min(), y.max()),
-                                      origin='lower', cmap='Greys', alpha=0.3)
+        ax.imshow((binary_map == 0).T, origin='lower', extent=extent, cmap='Greys', alpha=0.3)
 
-    # Overlay sensori
-    if sensor_locs is not None:
-        sensor_scatter = ax.scatter(*zip(*sensor_locs), marker='^', c='black', s=80, label='Sensori')
+    # sensori
+    if sensor_locs is not None and len(sensor_locs) > 0:
+        sx, sy = zip(*sensor_locs)
+        ax.scatter(sx, sy, marker='^', c='black', s=80, label='Sensori')
 
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
     title = ax.set_title("Dispersione al tempo t = 0")
 
     def update(t):
-        img.set_array(C1_micro[:, :, t].ravel())
+        img.set_data(C1_micro[:, :, t].T)
         title.set_text(f"Dispersione al tempo t = {t}")
         return img, title
 
     ani = animation.FuncAnimation(fig, update, frames=T, interval=interval, blit=False)
-
     plt.tight_layout()
-
     if save_path:
-        ani.save(save_path, writer='pillow', fps=1000//interval)
+        ani.save(save_path, writer='pillow', fps=max(1, 1000 // interval))
         print(f"✅ Animazione salvata in: {save_path}")
     else:
         plt.show()
 
+
 def plot_puff_on_map(C1, x_grid, y_grid, center_lat, center_lon, timestep=-1, threshold=0.00, cutoff_norm=0.10, zoom_start=13, sensor_locs=None):
     deg_per_m = 1 / 111320
 
-    lat_grid = center_lat + y_grid * deg_per_m
-    lon_grid = center_lon + x_grid * deg_per_m / np.cos(np.deg2rad(center_lat))
+    X, Y = np.meshgrid(x_grid, y_grid, indexing='xy')  # (ny, nx)
+
+    lat_grid = center_lat + Y * deg_per_m
+    lon_grid = center_lon + X * deg_per_m / np.cos(np.deg2rad(center_lat))
 
     C = C1[:, :, timestep] if timestep >= 0 else np.mean(C1, axis=2)
     C_max = np.max(C)
-    print(f"Max concentrazione: {C_max}")
     if C_max == 0:
         raise ValueError("Tutte le concentrazioni sono nulle")
-
     C_norm = C / C_max
 
-    print(f"Valori normalizzati: min {np.min(C_norm)}, max {np.max(C_norm)}")
-
     points = []
-    for i in range(lat_grid.shape[0]):
-        for j in range(lat_grid.shape[1]):
+    ny, nx = C.shape
+    for j in range(ny):
+        for i in range(nx):
             if C[i, j] > threshold and C_norm[i, j] > cutoff_norm:
-                points.append([lat_grid[i, j], lon_grid[i, j], C_norm[i, j]])
+                points.append([lat_grid[j, i], lon_grid[j, i], float(C_norm[i, j])])
+
     print(f"Punti selezionati: {len(points)}")
 
     if not points:
@@ -322,8 +314,6 @@ def folium_map_plot(sensor_coords_geo, source_geo, map_center=None, zoom_start=1
 
 def plot_sensors_on_map(sensor_positions, mappa):
     import folium
-    for pos in sensor_positions:
-        folium.Marker(location=pos, popup="Sensore", icon=folium.Icon(color='blue')).add_to(mappa)
     for i, pos in enumerate(sensor_positions):
         folium.Marker(location=pos, popup=f"Sensore {i+1}", icon=folium.Icon(color='blue')).add_to(mappa)
     return mappa

@@ -1,11 +1,10 @@
 # sigmaCalculation.py
 import numpy as np
 import sys
-from scipy.special import erfcinv as erfcinv
 
 def calc_sigmas(CATEGORY,x1):
 
-    x=np.abs(x1)
+    x = np.abs(np.asarray(x1, dtype=float))
 
     # inizializzazione dei coefficienti
     # a, b, c, d sono i coefficienti per il calcolo di sigma
@@ -182,12 +181,22 @@ def calc_sigmas(CATEGORY,x1):
         c[:]=4.1667
         d[:]=0.36191
     else:
-        sys.exit()
+        raise ValueError(f"Unknown stability CATEGORY: {CATEGORY}")
 
-    sig_z=a*(x/1000.)**b
-    sig_z[np.where(sig_z[:]>5000.)]=5000.
 
-    theta=0.017453293*(c-d*np.log(np.abs(x+1e-15)/1000.))
-    sig_y=465.11628*x/1000.*np.tan(theta)
+    # conversioni e calcoli numericamente più stabili
+    km = x / 1000.0
 
-    return (sig_y,sig_z)
+    sig_z = a * (km ** b)
+    sig_z = np.clip(sig_z, 1e-9, 5000.0)  # cap superiore + floor per evitare 0
+
+    # θ = (c - d * log(x_km)) in gradi → radianti, con clamp per evitare tan(≈90°)
+    theta_deg = c - d * np.log(np.clip(km + 1e-15, 1e-15, None))
+    theta_rad = np.deg2rad(theta_deg)
+    theta_rad = np.clip(theta_rad, 1e-6, np.deg2rad(89.0))
+
+    sig_y = 465.11628 * km * np.tan(theta_rad)
+    sig_y = np.clip(sig_y, 1e-9, None)     # floor
+
+    return (sig_y, sig_z)
+

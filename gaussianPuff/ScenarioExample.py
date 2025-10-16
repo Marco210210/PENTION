@@ -4,7 +4,7 @@
 # Qui modifichi solo i parametri sotto; tutto il resto del progetto li userà automaticamente.
 # =============================================================================
 
-from gaussianPuff.config import (
+from GaussianPuff.Config import (
     ModelConfig, WindType, StabilityType, PasquillGiffordStability,
     NPS, OutputType, DispersionModelType, ConfigPuff
 )
