@@ -1,0 +1,72 @@
+services:
+  classificatore_nps:
+    build:
+      context: ./ClassificatoreNPS
+      dockerfile: Dockerfile
+    image: clas_nps:latest
+    container_name: clas_nps
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  correction_dispersion:
+    build:
+      context: ./CorrectionDispersion
+      dockerfile: Dockerfile
+    image: correction_dispersion:latest
+    container_name: correction_dispersion
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    volumes:
+      - ./CorrectionDispersion/dataset:/CorrectionDispersion/dataset:ro
+      - ./CorrectionDispersion/binary_maps_data:/CorrectionDispersion/binary_maps_data:ro
+      - ./CorrectionDispersion/models:/CorrectionDispersion/models
+
+  gaussian_puff:
+    build:
+      context: ./gaussianPuff
+      dockerfile: Dockerfile
+    image: gaussian_dispersion_model:latest
+    container_name: gaussian_dispersion_model
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    volumes:
+      - ./gaussianPuff:/PentionSystem/gaussianPuff
+      - ./ClassificatoreNPS/datasetNPS:/PentionSystem/datasetNPS:ro
+
+
+  source_localization:
+    build:
+      context: ./EmissionSouceLocalization
+      dockerfile: Dockerfile
+    image: loc_emission_source:latest
+    container_name: loc_emission_source
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+
+  pention_system:
+    build:
+      context: ./PentionSystem
+      dockerfile: Dockerfile
+    image: pention-frontend:latest
+    container_name: pention_system
+    ports:
+      - "8004:8004"
+    restart: unless-stopped
+    depends_on:
+      - classificatore_nps
+      - correction_dispersion
+      - gaussian_puff
+      - source_localization
+    volumes:
+      - ./gaussianPuff:/PentionSystem/gaussianPuff
+      - ./ClassificatoreNPS/datasetNPS:/PentionSystem/ClassificatoreNPS/datasetNPS:ro
+    environment:
+      CORRECTION_URL:   http://correction_dispersion:8001
+      GAUSSIAN_URL:     http://gaussian_dispersion_model:8002
+      LOCALIZATION_URL: http://loc_emission_source:8003
+      CLASSIFIER_URL:   http://clas_nps:8000
+      PENTION_DATASET_CSV: /PentionSystem/ClassificatoreNPS/datasetNPS/1-s2.0-S2468170923000358-mmc1.csv

@@ -1,0 +1,33 @@
+# Core numerics & data
+numpy>=1.26
+pandas>=2.2
+scipy>=1.11
+matplotlib>=3.8
+tqdm>=4.66
+
+# ML / DL
+scikit-learn>=1.4
+imbalanced-learn>=0.12
+joblib>=1.3
+tensorflow>=2.12   # per ora CPU; GPU la vediamo dopo se serve davvero
+
+# Geospatial / maps (per binary map, OSM, plot)
+osmnx>=1.9
+shapely>=2.0
+geopandas>=0.14
+folium>=0.15
+branca>=0.7
+windrose>=1.8.1
+
+# API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+# UI
+streamlit>=1.36
+streamlit-folium>=0.18
+
+# Pytorch/pyg placeholder (CPU per ora; GPU in step 2)
+torch>=2.4 ; platform_system!="Windows"  # su Windows installeremo la build CUDA separatamente
+torch-geometric>=2.5 ; platform_system!="Windows"
