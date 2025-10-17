@@ -62,7 +62,7 @@ def gauss_func_puff(puff, x_grid, y_grid, z_grid, dt, stability, wind_speed, win
     # Nota: qui wind_dir non viene usata. Il centro del puff (puff.x, puff.y, puff.z)
     # è già aggiornato dallo step di advezione esterno.
 
-    downwind_dist = max(0.0, float(wind_speed) * float(dt))
+    downwind_dist = max(0.0, float(wind_speed) * float(dt) * 3600.0)
     sig_y, sig_z = calc_sigmas(stability, np.array([downwind_dist]))
     sig_y = float(sig_y[0])
     sig_z = float(sig_z[0])

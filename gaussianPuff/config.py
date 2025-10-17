@@ -7,6 +7,13 @@ class DispersionModelType(Enum):
     PLUME = "plume"
     PUFF = "puff"
 
+    @staticmethod
+    def from_string(s: str) -> "DispersionModelType":
+        try:
+            return DispersionModelType[s.strip().upper()]
+        except KeyError:
+            raise ValueError(f"No DispersionModelType member matches '{s}'")
+
 @dataclass
 class ConfigPuff:
     puff_interval: float = 1    # ore tra un puff e l'altro
